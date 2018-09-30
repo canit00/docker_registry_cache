@@ -1,6 +1,7 @@
 ---
 # Ansible playbook to enable proxy cache
 # it assumes you already have a certificate and key in place however, check.
+# > https://github.com/canit00/ansible-tls-cert.git
 # it is also based off using userns on RHEL 7
 
 - hosts: 127.0.0.1

@@ -32,6 +32,11 @@
     - subuid
     - subgid
 
+  - name: install docker
+    package:
+      name: docker
+      state: latest
+
   - name: set userns-remap
     lineinfile:
       path: /etc/sysconfig/docker
@@ -52,3 +57,4 @@
   - name: start docker service
     service:
       name: docker
+      state: started
