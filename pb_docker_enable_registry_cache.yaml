@@ -1,0 +1,121 @@
+---
+# Ansible playbook to enable proxy cache
+# it assumes you already have certificate and key in place however, check.
+# it is also based off using userns is RHEL 7
+
+- hosts: 127.0.0.1
+  gather_facts: no
+  vars:
+    dock_dir: /root/docker-reg
+    dest_dir: /var/lib/registry
+
+  tasks:
+  - name: chown /var/lib/registry
+    file:
+      path: "{{ dest_dir }}"
+      state: directory
+      owner: 808080
+      group: 808080
+      recurse: yes
+
+  - name: set setype context registry
+    command: >
+      semanage fcontext -a -t container_file_t "/var/lib/registry(/.*)?"
+    tags:
+    - se
+
+  - name: set setype context docker
+    command: >
+      semanage fcontext -a -t container_var_lib_t "/var/lib/docker(/.*)?"
+    tags:
+    - se
+
+  - name: apply setype context registry
+    command: >
+      restorecon -R -v /var/lib/registry
+    tags:
+    - se
+
+  - name: apply setype context docker
+    command: >
+      restorecon -R -v /var/lib/docker
+    tags:
+    - se
+
+  - name: make sure docker is running
+    service:
+      name: docker
+      state: started
+
+  - file:
+      path: "{{ dock_dir }}"
+      state: directory
+
+  - name: retrieve docker configuration
+    shell: > 
+      docker run -t --rm --entrypoint cat registry:2 /etc/docker/registry/config.yml > "{{ dock_dir }}/config.yml"
+
+  - name: check if key present
+    stat:
+      path: /etc/pki/tls/private/selfsigned.key
+    register: key
+
+  - name: check if cert present
+    stat:
+      path: /etc/pki/tls/certs/selfsigned.crt
+    register: crt
+
+  - fail:
+      msg: "key or certificate missing - please revise"
+    when: key.stat.exists == false or
+          crt.stat.exists == false
+
+  - copy:
+      remote_src: yes
+      src: "{{ item }}"
+      dest: "{{ dest_dir }}"
+      owner: 808080
+      group: 808080
+    with_items:
+    - /etc/pki/tls/certs/selfsigned.crt
+    - /etc/pki/tls/private/selfsigned.key
+
+  - copy:
+      remote_src: yes
+      src: "{{ dock_dir }}/config.yml"
+      dest: "{{ dest_dir }}"
+
+  - name: configure registry TLS
+    blockinfile:
+      path: "{{ dest_dir }}/config.yml"
+      state: present
+      insertafter: 'addr: :5000'
+      block: |2
+          tls:
+                certificate: "{{ dest_dir }}/selfsigned.crt"
+                key: "{{ dest_dir }}/selfsigned.key"
+    
+  - name: configure registry TLS
+    lineinfile:
+      path: "{{ dest_dir }}/config.yml"
+      insertafter: 'threshold: 3'
+      line: "proxy:\n      remoteurl: https://registry-1.docker.io"
+      owner: 808080
+      group: 808080
+
+  - name: run docker registry
+    docker_container:
+      name: v2-mirror
+      state: started
+      detach: yes
+      image: registry:2
+      ports:
+        - "5000:5000"
+      volumes:
+        - /var/lib/registry:/var/lib/registry:Z
+        - /var/lib/registry/config.yml:/etc/docker/registry/config.yml:Z
+
+  - name: test connection to registry
+    command: >
+      curl -kvI https://{{ url }}:5000/v2/
+      
