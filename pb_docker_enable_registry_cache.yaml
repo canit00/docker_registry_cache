@@ -1,7 +1,7 @@
 ---
 # Ansible playbook to enable proxy cache
-# it assumes you already have certificate and key in place however, check.
-# it is also based off using userns is RHEL 7
+# it assumes you already have a certificate and key in place however, check.
+# it is also based off using userns on RHEL 7
 
 - hosts: 127.0.0.1
   gather_facts: no
