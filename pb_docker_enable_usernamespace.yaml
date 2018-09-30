@@ -1,0 +1,54 @@
+---
+# Ansible playbook to enable usernamespace for Docker
+#
+- hosts: 127.0.0.1
+  gather_facts: no
+  tasks:
+  - name: stat if max user ns == 0
+    command: >
+      grep -q 0 /proc/sys/user/max_user_namespaces
+    register: ns
+
+  - name: set max usrnamespace
+    shell: echo "15000" > /proc/sys/user/max_user_namespaces
+    when: ns.rc == 0
+
+  - name: validate max usrnamespace
+    command: grep 15000 /proc/sys/user/max_user_namespaces
+
+  - name: create u/gid files
+    file:
+      path: "/etc/{{ item }}"
+      state: touch
+    with_items:
+    - subuid
+    - subgid
+
+  - name: assign user and group
+    lineinfile:
+      line: 'dockremap:808080:1000'
+      path: "/etc/{{ item }}"
+    with_items:
+    - subuid
+    - subgid
+
+  - name: set userns-remap
+    lineinfile:
+      path: /etc/sysconfig/docker
+      backup: yes
+      line: "OPTIONS='--selinux-enabled --log-driver=journald --signature-verification=false --userns-remap=default'"
+      regexp: '^OPTIONS'
+      backrefs: yes
+      state: present
+
+  - name: stop docker service
+    service:
+      name: docker
+      state: stopped
+
+  - name: wipe contents of dir
+    shell: rm -rf /var/lib/docker/*
+
+  - name: start docker service
+    service:
+      name: docker
